@@ -30,12 +30,15 @@ public final class NetworkOptimizationsConfiguration extends Part {
         reload();
     }
 
-    private NetworkOptimizationsConfiguration() {
+    /**
+     * Public no-arg constructor required by Canvas' Part/config reflection system and SnakeYAML.
+     */
+    public NetworkOptimizationsConfiguration() {
     }
 
     /** Forces class initialization during startup when desired. */
     public static void init() {
-        // no-op
+        // no-op; invoking this method forces the static initializer above to run.
     }
 
     public static NetworkOptimizationsConfiguration getInstance() {
