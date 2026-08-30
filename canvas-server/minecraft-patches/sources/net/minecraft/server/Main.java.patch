@@ -1,10 +1,9 @@
 --- a/net/minecraft/server/Main.java
 +++ b/net/minecraft/server/Main.java
-@@ -69,6 +_,20 @@
+@@ -69,6 +_,19 @@
      public static void main(final OptionSet options) { // CraftBukkit - replaces main(String[] args)
          io.papermc.paper.log.LogManagerShutdownThread.hook(); // Paper - Improved watchdog support
          SharedConstants.tryDetectVersion();
-+        io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.init(); // Canvas - load advanced network config before Netty accepts connections
 +        // Canvas start - validate EULA early
 +        Path eulaFile = Paths.get("eula.txt");
 +        Eula eula = new Eula(eulaFile);
