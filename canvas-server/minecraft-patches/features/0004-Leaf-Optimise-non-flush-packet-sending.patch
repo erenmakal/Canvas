@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spottedleaf <Spottedleaf@users.noreply.github.com>
+Date: Tue, 22 Sep 2020 01:49:19 -0700
+Subject: [PATCH] Leaf - Optimise non-flush packet sending
+
+Original license: GPL-3.0-only
+Original project: https://github.com/PaperMC/Paper
+Paper pull request: https://github.com/PaperMC/Paper/pull/10172
+Ported from Leaf 26.2 and adapted for Canvas configuration.
+
+Places such as entity tracking make heavy use of packet sending. Scheduling
+one Netty task per packet can trigger expensive event-loop wakeups even when
+the caller intentionally does not flush yet. Use SingleThreadEventLoop's
+lazyExecute for non-flush writes, allowing Netty to process them without a
+wakeup for every queued packet.
+
+Canvas additionally guards the optimisation behind an instanceof check so
+custom/exotic event loop implementations keep the normal execution path.
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index f518501cb80820e35c4fc81f1c25b9210f985f0c..31dcb2ca151b411d82dc1e0b1e41e8d3dfd65d45 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -128,6 +128,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     public boolean isPending = true;
+     public boolean queueImmunity;
+     // Paper end - Optimize network
++    private @Nullable io.netty.channel.SingleThreadEventLoop canvas$eventLoop; // Canvas - optimise packets that are not flushed
+ 
+     public Connection(final PacketFlow receiving) {
+         this.receiving = receiving;
+@@ -137,6 +138,8 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     public void channelActive(final ChannelHandlerContext ctx) throws Exception {
+         super.channelActive(ctx);
+         this.channel = ctx.channel();
++        this.canvas$eventLoop = this.channel.eventLoop() instanceof io.netty.channel.SingleThreadEventLoop eventLoop
++            ? eventLoop : null; // Canvas - optimise packets that are not flushed
+         this.address = this.channel.remoteAddress();
+         this.preparing = false; // Spigot
+         if (this.delayedDisconnect != null) {
+@@ -487,6 +490,13 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.doSendPacket(packet, listener, flush);
+         } else {
++            // Canvas start - optimise packets that are not flushed; Leaf/Paper-derived
++            if (!flush
++                && this.canvas$eventLoop != null
++                && io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().packetSending.optimizeNonFlushPacketSending) {
++                this.canvas$eventLoop.lazyExecute(() -> this.doSendPacket(packet, listener, false));
++            } else
++                // Canvas end - optimise packets that are not flushed
+             this.channel.eventLoop().execute(() -> this.doSendPacket(packet, listener, flush));
+         }
+     }
