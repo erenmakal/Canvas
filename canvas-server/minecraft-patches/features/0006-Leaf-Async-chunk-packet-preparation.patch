@@ -27,7 +27,7 @@ index 45c927417d34ddd48c92116efd9b5777bfc52e35..95b8e5059196e91552be7fd40ad8637a
  
          public PlayerChunkLoaderData(final ServerLevel world, final ServerPlayer player) {
              this.world = world;
-@@ -445,8 +448,61 @@ public final class RegionizedPlayerChunkLoader {
+@@ -445,8 +448,53 @@ public final class RegionizedPlayerChunkLoader {
              throw new IllegalStateException();
          }
  
@@ -82,7 +82,7 @@ index 45c927417d34ddd48c92116efd9b5777bfc52e35..95b8e5059196e91552be7fd40ad8637a
                  return;
              }
              this.sendUnloadChunkRaw(chunkX, chunkZ);
-@@ -856,15 +912,43 @@ public final class RegionizedPlayerChunkLoader {
+@@ -856,15 +904,46 @@ public final class RegionizedPlayerChunkLoader {
                          return;
                      } // else: good to dequeue and send, fall through
                  }
@@ -132,7 +132,7 @@ index 45c927417d34ddd48c92116efd9b5777bfc52e35..95b8e5059196e91552be7fd40ad8637a
  
              this.flushDelayedTicketOps();
          }
-@@ -1041,7 +1125,7 @@ public final class RegionizedPlayerChunkLoader {
+@@ -1041,7 +1120,7 @@ public final class RegionizedPlayerChunkLoader {
                          break;
                      }
                      case CHUNK_TICKET_STAGE_GENERATED: {
@@ -141,7 +141,7 @@ index 45c927417d34ddd48c92116efd9b5777bfc52e35..95b8e5059196e91552be7fd40ad8637a
                              this.sendQueue.enqueue(chunk);
                          }
                          if (squareDistance <= tickViewDistance) {
-@@ -1050,7 +1134,7 @@ public final class RegionizedPlayerChunkLoader {
+@@ -1050,7 +1129,7 @@ public final class RegionizedPlayerChunkLoader {
                          break;
                      }
                      case CHUNK_TICKET_STAGE_TICK: {
@@ -150,7 +150,7 @@ index 45c927417d34ddd48c92116efd9b5777bfc52e35..95b8e5059196e91552be7fd40ad8637a
                              this.sendQueue.enqueue(chunk);
                          }
                          break;
-@@ -1095,6 +1179,9 @@ public final class RegionizedPlayerChunkLoader {
+@@ -1095,6 +1174,9 @@ public final class RegionizedPlayerChunkLoader {
              this.flushDelayedTicketOps();
  
              // now all tickets should be removed, which is all of our external state
