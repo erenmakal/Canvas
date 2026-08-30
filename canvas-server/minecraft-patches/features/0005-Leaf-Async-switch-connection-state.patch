@@ -26,7 +26,7 @@ index 31dcb2ca151b411d82dc1e0b1e41e8d3dfd65d45..a80704619116d30582543dafd26fca6e
  
          this.packetListener = packetListener;
          this.disconnectListener = null;
-@@ -330,7 +335,15 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -330,7 +335,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
              configMessage = configMessage.andThen(ctx -> ctx.pipeline().addAfter(HandlerNames.DECODER, HandlerNames.BUNDLER, newBundler));
          }
  
@@ -42,7 +42,7 @@ index 31dcb2ca151b411d82dc1e0b1e41e8d3dfd65d45..a80704619116d30582543dafd26fca6e
      }
  
      public void setupOutboundProtocol(final ProtocolInfo<?> protocol) {
-@@ -349,6 +362,31 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -349,6 +361,31 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
          syncAfterConfigurationChange(this.channel.writeAndFlush(configMessage.andThen(ctx -> this.sendLoginDisconnect = isLoginProtocol)));
      }
  
