@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eren Makal <69559506+erenmakal@users.noreply.github.com>
+Date: Sun, 30 Aug 2026 21:22:00 +0300
+Subject: [PATCH] Initialize advanced network config during bootstrap
+
+Load the advanced network configuration immediately after Canvas' global
+configuration during Minecraft bootstrap. This prevents the first inbound
+Netty connection from lazily triggering YAML parsing/file creation on a
+Netty I/O thread.
+
+diff --git a/net/minecraft/server/Bootstrap.java b/net/minecraft/server/Bootstrap.java
+--- a/net/minecraft/server/Bootstrap.java
++++ b/net/minecraft/server/Bootstrap.java
+@@ -49,6 +49,7 @@ public class Bootstrap {
+                 throw new IllegalStateException("Unable to load registries");
+             }
+ 
+             io.canvasmc.canvas.GlobalConfiguration.init(); // Canvas - Rebrand - load global configuration
++            io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.init(); // Canvas - load advanced network config during bootstrap
+             FireBlock.bootStrap();
+             ComposterBlock.bootStrap();
+             if (EntityType.getKey(EntityTypes.PLAYER) == null) {
