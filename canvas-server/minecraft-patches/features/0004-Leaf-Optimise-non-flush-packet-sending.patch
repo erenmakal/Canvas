@@ -25,7 +25,7 @@ index f518501cb80820e35c4fc81f1c25b9210f985f0c..31dcb2ca151b411d82dc1e0b1e41e8d3
      public boolean isPending = true;
      public boolean queueImmunity;
      // Paper end - Optimize network
-+    private @Nullable io.netty.channel.SingleThreadEventLoop canvas$eventLoop; // Canvas - optimise packets that are not flushed
++    private io.netty.channel.@Nullable SingleThreadEventLoop canvas$eventLoop; // Canvas - optimise packets that are not flushed
  
      public Connection(final PacketFlow receiving) {
          this.receiving = receiving;
