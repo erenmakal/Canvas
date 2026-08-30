@@ -78,7 +78,7 @@ diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.
 index 6baa9d2a8af7901d47964e6d7ad53ea7963ceeef..2d7533d0fe53c72b8f78ae36b11ec6bc65b074eb 100644
 --- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
-@@ -192,11 +192,34 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+@@ -192,11 +192,33 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
          this.finishCurrentTask(ServerCodeOfConductConfigurationTask.TYPE);
      }
  
@@ -116,7 +116,7 @@ diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/n
 index 002084531c39b4d886fea89047a3e4dbdb95a890..f58432618eb19572ec0ae5ce74369a820489e479 100644
 --- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
-@@ -458,11 +458,31 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+@@ -458,11 +458,30 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
          this.disconnect(ServerCommonPacketListenerImpl.DISCONNECT_UNEXPECTED_QUERY);
      }
  
