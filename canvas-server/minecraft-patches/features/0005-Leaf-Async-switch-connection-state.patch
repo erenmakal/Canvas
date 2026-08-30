@@ -1,0 +1,150 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: hayanesuru <hayanesuru@outlook.jp>
+Date: Fri, 9 May 2025 16:55:34 +0900
+Subject: [PATCH] Leaf - Async switch connection state
+
+Ported from Leaf 26.2 and adapted to Canvas/Folia configuration.
+
+Synchronous pipeline protocol switches can block the calling region/tick
+thread waiting for Netty. When enabled, apply LOGIN -> CONFIGURATION -> GAME
+state transitions through ChannelFuture listeners and continue packet
+processing after Netty has installed the new protocol handlers.
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index 31dcb2ca151b411d82dc1e0b1e41e8d3dfd65d45..a80704619116d30582543dafd26fca6e706518c4 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -320,6 +320,11 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         if (protocol.flow() != this.getReceiving()) {
+             throw new IllegalStateException("Invalid inbound protocol: " + protocol.id());
+         }
++        // Canvas start - Leaf - Async switch connection state
++        if (io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState && ca.spottedleaf.moonrise.common.util.TickThread.isTickThread()) {
++            this.channel.config().setAutoRead(false);
++        }
++        // Canvas end - Leaf - Async switch connection state
+ 
+         this.packetListener = packetListener;
+         this.disconnectListener = null;
+@@ -330,7 +335,15 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             configMessage = configMessage.andThen(ctx -> ctx.pipeline().addAfter(HandlerNames.DECODER, HandlerNames.BUNDLER, newBundler));
+         }
+ 
+-        syncAfterConfigurationChange(this.channel.writeAndFlush(configMessage));
++        // Canvas start - Leaf - Async switch connection state
++        final ChannelFuture canvas$future = this.channel.writeAndFlush(configMessage);
++        if (io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState && ca.spottedleaf.moonrise.common.util.TickThread.isTickThread()) {
++            canvas$future.addListener((ChannelFutureListener) Connection::syncAfterConfigurationChange);
++            return;
++        }
++        syncAfterConfigurationChange(canvas$future);
++        // Canvas end - Leaf - Async switch connection state
+     }
+ 
+     public void setupOutboundProtocol(final ProtocolInfo<?> protocol) {
+@@ -349,6 +362,31 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         syncAfterConfigurationChange(this.channel.writeAndFlush(configMessage.andThen(ctx -> this.sendLoginDisconnect = isLoginProtocol)));
+     }
+ 
++    // Canvas start - Leaf - Async switch connection state
++    public @Nullable ChannelFuture canvas$setupOutboundProtocolAsync(final ProtocolInfo<?> protocol) {
++        if (protocol.flow() != this.getSending()) {
++            throw new IllegalStateException("Invalid outbound protocol: " + protocol.id());
++        }
++
++        UnconfiguredPipelineHandler.OutboundConfigurationTask configMessage = UnconfiguredPipelineHandler.setupOutboundProtocol(protocol);
++        final BundlerInfo bundlerInfo = protocol.bundlerInfo();
++        if (bundlerInfo != null) {
++            final PacketBundleUnpacker newUnbundler = new PacketBundleUnpacker(bundlerInfo);
++            configMessage = configMessage.andThen(
++                ctx -> ctx.pipeline().addAfter(HandlerNames.ENCODER, HandlerNames.UNBUNDLER, newUnbundler)
++            );
++        }
++
++        final boolean isLoginProtocol = protocol.id() == ConnectionProtocol.LOGIN;
++        final ChannelFuture future = this.channel.writeAndFlush(configMessage.andThen(ctx -> this.sendLoginDisconnect = isLoginProtocol));
++        if (io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState) {
++            future.addListener((ChannelFutureListener) Connection::syncAfterConfigurationChange);
++            return future;
++        }
++        return null;
++    }
++    // Canvas end - Leaf - Async switch connection state
++
+     public void setListenerForServerboundHandshake(final PacketListener packetListener) {
+         if (this.packetListener != null) {
+             throw new IllegalStateException("Listener already set");
+diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index 6baa9d2a8af7901d47964e6d7ad53ea7963ceeef..2d7533d0fe53c72b8f78ae36b11ec6bc65b074eb 100644
+--- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -192,11 +192,34 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+         this.finishCurrentTask(ServerCodeOfConductConfigurationTask.TYPE);
+     }
+ 
++    private volatile boolean canvas$changingState = false; // Canvas - Leaf - Async switch connection state
+     @Override
+     public void handleConfigurationFinished(final ServerboundFinishConfigurationPacket packet) {
++        // Canvas start - Leaf - Async switch connection state
++        if (io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState && !this.canvas$changingState) {
++            this.canvas$changingState = true;
++            this.finishCurrentTask(JoinWorldTask.TYPE);
++            this.connection.canvas$setupOutboundProtocolAsync(GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(this.server.registryAccess()))).addListener(_ -> {
++                try {
++                    PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++                } catch (net.minecraft.server.RunningOnDifferentThreadException ignored) {
++                } catch (io.papermc.paper.util.ServerStopRejectedExecutionException ignored) {
++                } catch (java.util.concurrent.RejectedExecutionException ignored) {
++                    this.connection.disconnect(Component.translatable("multiplayer.disconnect.server_shutdown"));
++                } catch (ClassCastException exception) {
++                    LOGGER.error("Received {} that couldn't be processed", packet.getClass(), exception);
++                    this.connection.disconnect(Component.translatable("multiplayer.disconnect.invalid_packet"));
++                }
++            });
++            return;
++        }
++        // Canvas end - Leaf - Async switch connection state
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++        if (!io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState) { // Canvas - Leaf
+         this.finishCurrentTask(JoinWorldTask.TYPE);
+         this.connection.setupOutboundProtocol(GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(this.server.registryAccess())));
++        } // Canvas - Leaf
+ 
+         try {
+             PlayerList playerList = this.server.getPlayerList();
+diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 002084531c39b4d886fea89047a3e4dbdb95a890..f58432618eb19572ec0ae5ce74369a820489e479 100644
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -458,11 +458,31 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+         this.disconnect(ServerCommonPacketListenerImpl.DISCONNECT_UNEXPECTED_QUERY);
+     }
+ 
++    private volatile boolean canvas$changingState = false; // Canvas - Leaf - Async switch connection state
+     @Override
+     public void handleLoginAcknowledgement(final ServerboundLoginAcknowledgedPacket packet) {
++        // Canvas start - Leaf - Async switch connection state
++        if (io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState && !this.canvas$changingState) {
++            this.canvas$changingState = true;
++            this.connection.canvas$setupOutboundProtocolAsync(ConfigurationProtocols.CLIENTBOUND).addListener(_ -> {
++                try {
++                    net.minecraft.network.protocol.PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++                } catch (net.minecraft.server.RunningOnDifferentThreadException ignored) {
++                } catch (io.papermc.paper.util.ServerStopRejectedExecutionException ignored) {
++                } catch (java.util.concurrent.RejectedExecutionException ignored) {
++                    this.connection.disconnect(Component.translatable("multiplayer.disconnect.server_shutdown"));
++                } catch (ClassCastException exception) {
++                    LOGGER.error("Received {} that couldn't be processed", packet.getClass(), exception);
++                    this.connection.disconnect(Component.translatable("multiplayer.disconnect.invalid_packet"));
++                }
++            });
++            return;
++        }
++        // Canvas end - Leaf - Async switch connection state
+         net.minecraft.network.protocol.PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor()); // CraftBukkit
+         Validate.validState(this.state == ServerLoginPacketListenerImpl.State.PROTOCOL_SWITCHING, "Unexpected login acknowledgement packet");
+-        this.connection.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND);
++        if (!io.canvasmc.canvas.network.NetworkOptimizationsConfiguration.getInstance().protocolSwitch.asyncSwitchConnectionState) this.connection.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND); // Canvas - Leaf
+         CommonListenerCookie cookie = CommonListenerCookie.createInitial(Objects.requireNonNull(this.authenticatedProfile), this.transferred);
+         ServerConfigurationPacketListenerImpl configPacketListener = new ServerConfigurationPacketListenerImpl(this.server, this.connection, cookie);
+         this.connection.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, configPacketListener);
