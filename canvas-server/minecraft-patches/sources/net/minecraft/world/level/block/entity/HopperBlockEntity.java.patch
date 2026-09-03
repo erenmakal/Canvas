@@ -100,7 +100,7 @@
 +            final int fullState = entity.fullState; // Paper - Perf: Optimize Hoppers // Canvas - optimize hoppers
 +            if (io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipHopper(
 +                level.getGameTime(), pos.asLong(), fullState == HOPPER_EMPTY
-+            )) return; // Canvas - adaptive empty-hopper backoff under pressure
++            )) return false; // Canvas - adaptive empty-hopper backoff under pressure
              if (fullState != HOPPER_EMPTY) { // Paper - Perf: Optimize Hoppers
                  changed = ejectItems(level, pos, entity);
              }
