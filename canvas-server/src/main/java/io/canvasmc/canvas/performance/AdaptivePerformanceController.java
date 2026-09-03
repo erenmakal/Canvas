@@ -1,6 +1,7 @@
 package io.canvasmc.canvas.performance;
 
 import io.papermc.paper.threadedregions.RegionizedServer;
+import io.papermc.paper.threadedregions.TickRegionScheduler;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
@@ -30,6 +31,9 @@ public final class AdaptivePerformanceController {
     private static volatile double heapPercent;
     private static volatile double cpuPercent;
     private static volatile double gcPercent;
+    private static volatile double systemMemoryPercent;
+    private static volatile double asyncQueuePercent;
+    private static volatile double worstRegionTps = TickRegionScheduler.getTickRate();
     private static volatile long lastGcCollectionMillis = totalGcCollectionMillis();
     private static volatile long lastSampleNanos = System.nanoTime();
     private static volatile long lastThreadWarningNanos;
@@ -70,8 +74,15 @@ public final class AdaptivePerformanceController {
         if (genericOsBean instanceof com.sun.management.OperatingSystemMXBean osBean) {
             final double rawCpu = osBean.getCpuLoad();
             cpuPercent = rawCpu < 0.0D ? 0.0D : rawCpu * 100.0D;
+
+            final long totalMemory = osBean.getTotalMemorySize();
+            final long freeMemory = osBean.getFreeMemorySize();
+            systemMemoryPercent = totalMemory <= 0L
+                ? 0.0D
+                : Math.max(0.0D, Math.min(100.0D, ((totalMemory - freeMemory) * 100.0D) / totalMemory));
         } else {
             cpuPercent = 0.0D;
+            systemMemoryPercent = 0.0D;
         }
 
         final long gcCollectionMillis = totalGcCollectionMillis();
@@ -80,6 +91,12 @@ public final class AdaptivePerformanceController {
         gcPercent = Math.min(100.0D, (gcDeltaMillis * 1_000_000.0D * 100.0D) / elapsedNanos);
         lastGcCollectionMillis = gcCollectionMillis;
         lastSampleNanos = now;
+
+        worstRegionTps = sampleWorstRegionTps();
+        final int queueSize = AdaptiveAsyncExecutor.getQueueSize();
+        asyncQueuePercent = queueSize < 0 || configuration.asyncScheduler.queueCapacity <= 0
+            ? 0.0D
+            : Math.min(100.0D, queueSize * 100.0D / configuration.asyncScheduler.queueCapacity);
 
         final PressureState desired = classify(configuration);
         final PressureState current = pressureState;
@@ -94,22 +111,51 @@ public final class AdaptivePerformanceController {
         checkNativeThreadPressure(now, configuration);
     }
 
+    private static double sampleWorstRegionTps() {
+        final MinecraftServer server = MinecraftServer.getServer();
+        final double targetTps = TickRegionScheduler.getTickRate();
+        if (server == null) {
+            return targetTps;
+        }
+
+        final long tickInterval = TickRegionScheduler.getTimeBetweenTicks();
+        final double[] worst = {targetTps};
+        for (final ServerLevel level : server.getAllLevels()) {
+            level.regioniser.computeForAllRegionsUnsynchronised(region -> {
+                final Double average = region.getData().getRegionSchedulingHandle().tickTimes5s.getTPSAverage(null, tickInterval);
+                if (average != null && Double.isFinite(average)) {
+                    worst[0] = Math.min(worst[0], average);
+                }
+            });
+        }
+        return worst[0];
+    }
+
     private static PressureState classify(final AdaptivePerformanceConfiguration configuration) {
         final AdaptivePerformanceConfiguration.PressureThresholds thresholds = configuration.pressure;
 
         if (heapPercent >= thresholds.heapEmergencyPercent
             || cpuPercent >= thresholds.cpuEmergencyPercent
-            || gcPercent >= thresholds.gcEmergencyPercent) {
+            || gcPercent >= thresholds.gcEmergencyPercent
+            || (thresholds.useRegionTps && worstRegionTps <= thresholds.regionEmergencyTps)
+            || (thresholds.useAsyncQueuePressure && asyncQueuePercent >= thresholds.asyncQueueEmergencyPercent)
+            || (thresholds.useSystemMemory && systemMemoryPercent >= thresholds.systemMemoryEmergencyPercent)) {
             return PressureState.EMERGENCY;
         }
         if (heapPercent >= thresholds.heapHighPercent
             || cpuPercent >= thresholds.cpuHighPercent
-            || gcPercent >= thresholds.gcHighPercent) {
+            || gcPercent >= thresholds.gcHighPercent
+            || (thresholds.useRegionTps && worstRegionTps <= thresholds.regionHighTps)
+            || (thresholds.useAsyncQueuePressure && asyncQueuePercent >= thresholds.asyncQueueHighPercent)
+            || (thresholds.useSystemMemory && systemMemoryPercent >= thresholds.systemMemoryHighPercent)) {
             return PressureState.HIGH;
         }
         if (heapPercent >= thresholds.heapBusyPercent
             || cpuPercent >= thresholds.cpuBusyPercent
-            || gcPercent >= thresholds.gcBusyPercent) {
+            || gcPercent >= thresholds.gcBusyPercent
+            || (thresholds.useRegionTps && worstRegionTps <= thresholds.regionBusyTps)
+            || (thresholds.useAsyncQueuePressure && asyncQueuePercent >= thresholds.asyncQueueBusyPercent)
+            || (thresholds.useSystemMemory && systemMemoryPercent >= thresholds.systemMemoryBusyPercent)) {
             return PressureState.BUSY;
         }
         return PressureState.NORMAL;
@@ -121,18 +167,28 @@ public final class AdaptivePerformanceController {
     ) {
         final AdaptivePerformanceConfiguration.PressureThresholds thresholds = configuration.pressure;
         final double hysteresis = configuration.recoveryHysteresisPercent;
+        final double regionMargin = thresholds.regionRecoveryTpsMargin;
 
         return switch (current) {
             case NORMAL -> true;
             case BUSY -> heapPercent < thresholds.heapBusyPercent - hysteresis
                 && cpuPercent < thresholds.cpuBusyPercent - hysteresis
-                && gcPercent < Math.max(0.0D, thresholds.gcBusyPercent - hysteresis);
+                && gcPercent < Math.max(0.0D, thresholds.gcBusyPercent - hysteresis)
+                && (!thresholds.useRegionTps || worstRegionTps > thresholds.regionBusyTps + regionMargin)
+                && (!thresholds.useAsyncQueuePressure || asyncQueuePercent < Math.max(0.0D, thresholds.asyncQueueBusyPercent - hysteresis))
+                && (!thresholds.useSystemMemory || systemMemoryPercent < thresholds.systemMemoryBusyPercent - hysteresis);
             case HIGH -> heapPercent < thresholds.heapHighPercent - hysteresis
                 && cpuPercent < thresholds.cpuHighPercent - hysteresis
-                && gcPercent < Math.max(0.0D, thresholds.gcHighPercent - hysteresis);
+                && gcPercent < Math.max(0.0D, thresholds.gcHighPercent - hysteresis)
+                && (!thresholds.useRegionTps || worstRegionTps > thresholds.regionHighTps + regionMargin)
+                && (!thresholds.useAsyncQueuePressure || asyncQueuePercent < Math.max(0.0D, thresholds.asyncQueueHighPercent - hysteresis))
+                && (!thresholds.useSystemMemory || systemMemoryPercent < thresholds.systemMemoryHighPercent - hysteresis);
             case EMERGENCY -> heapPercent < thresholds.heapEmergencyPercent - hysteresis
                 && cpuPercent < thresholds.cpuEmergencyPercent - hysteresis
-                && gcPercent < Math.max(0.0D, thresholds.gcEmergencyPercent - hysteresis);
+                && gcPercent < Math.max(0.0D, thresholds.gcEmergencyPercent - hysteresis)
+                && (!thresholds.useRegionTps || worstRegionTps > thresholds.regionEmergencyTps + regionMargin)
+                && (!thresholds.useAsyncQueuePressure || asyncQueuePercent < Math.max(0.0D, thresholds.asyncQueueEmergencyPercent - hysteresis))
+                && (!thresholds.useSystemMemory || systemMemoryPercent < thresholds.systemMemoryEmergencyPercent - hysteresis);
         };
     }
 
@@ -148,15 +204,17 @@ public final class AdaptivePerformanceController {
 
         if (configuration.logStateTransitions) {
             final String message = String.format(
-                "Pressure state %s -> %s (heap=%.1f%%, cpu=%.1f%%, gc=%.1f%%, async-active=%d, async-pool=%d, async-queue=%d)",
+                "Pressure state %s -> %s (heap=%.1f%%, cpu=%.1f%%, gc=%.1f%%, system-ram=%.1f%%, worst-region=%.2f TPS, async-queue=%.1f%%, async-active=%d, async-pool=%d)",
                 previous,
                 next,
                 heapPercent,
                 cpuPercent,
                 gcPercent,
+                systemMemoryPercent,
+                worstRegionTps,
+                asyncQueuePercent,
                 AdaptiveAsyncExecutor.getActiveThreadCount(),
-                AdaptiveAsyncExecutor.getPoolSize(),
-                AdaptiveAsyncExecutor.getQueueSize()
+                AdaptiveAsyncExecutor.getPoolSize()
             );
             if (next.ordinal() >= PressureState.HIGH.ordinal()) {
                 LOGGER.warn(message);
@@ -282,6 +340,18 @@ public final class AdaptivePerformanceController {
         ));
     }
 
+    public static boolean shouldSkipChunkTick(final long gameTime, final long chunkSalt) {
+        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
+        if (!configuration.enabled || !configuration.chunkTickBackoff.enabled) {
+            return false;
+        }
+        return shouldSkipByInterval(gameTime, chunkSalt, intervalFor(
+            configuration.chunkTickBackoff.busyInterval,
+            configuration.chunkTickBackoff.highInterval,
+            configuration.chunkTickBackoff.emergencyInterval
+        ));
+    }
+
     private static int intervalFor(final int busy, final int high, final int emergency) {
         return switch (pressureState) {
             case NORMAL -> 1;
@@ -323,6 +393,18 @@ public final class AdaptivePerformanceController {
 
     public static double getGcPercent() {
         return gcPercent;
+    }
+
+    public static double getSystemMemoryPercent() {
+        return systemMemoryPercent;
+    }
+
+    public static double getAsyncQueuePercent() {
+        return asyncQueuePercent;
+    }
+
+    public static double getWorstRegionTps() {
+        return worstRegionTps;
     }
 
     private record DistanceSnapshot(int viewDistance, int simulationDistance) {
