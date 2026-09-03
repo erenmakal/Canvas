@@ -5,6 +5,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.canvasmc.canvas.GlobalConfiguration;
 import io.canvasmc.canvas.WorldConfig;
 import io.canvasmc.canvas.commands.SubCommand;
+import io.canvasmc.canvas.performance.AdaptivePerformanceConfiguration;
 import io.canvasmc.canvas.util.Util;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
@@ -33,8 +34,9 @@ public class ReloadSubCommand implements SubCommand {
                 Component.literal("This command is unsupported. If you encounter issues, please run /stop").withColor(CommonColors.RED)
             );
 
-            // reload global and world configs
+            // reload global, adaptive and world configs
             GlobalConfiguration.reload();
+            AdaptivePerformanceConfiguration.reload();
             WorldConfig.reload();
 
             GlobalConfiguration.broadcast(
