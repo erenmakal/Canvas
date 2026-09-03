@@ -21,3 +21,23 @@
  
          for (RegisteredListener registration : listeners) {
              if (!registration.getPlugin().isEnabled()) {
+@@ -52,6 +_,11 @@
+                 continue;
+             }
+ 
++            if (io.canvasmc.canvas.performance.PluginPerformanceTracker.shouldSkip(registration.getPlugin())) {
++                continue; // Canvas - optional emergency plugin CPU budget enforcement
++            }
++            final long canvas$eventStarted = io.canvasmc.canvas.performance.PluginPerformanceTracker.begin();
++
+             try {
+                 registration.callEvent(event);
+             } catch (AuthorNagException ex) {
+@@ -77,6 +_,7 @@
+                 if (!(event instanceof ServerExceptionEvent)) { // We don't want to cause an endless event loop
+                     this.callEvent(new ServerExceptionEvent(new ServerEventException(msg, ex, registration.getPlugin(), registration.getListener(), event)));
+                 }
+             }
++            io.canvasmc.canvas.performance.PluginPerformanceTracker.end(registration.getPlugin(), event, canvas$eventStarted); // Canvas - plugin CPU accounting
+         }
+     }
