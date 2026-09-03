@@ -1,7 +1,6 @@
 --- a/net/minecraft/world/entity/ai/navigation/PathNavigation.java
 +++ b/net/minecraft/world/entity/ai/navigation/PathNavigation.java
-@@ -170,7 +_,12 @@
-                 }
+@@ -193,6 +_,11 @@
              }
          }
          // Paper end - EntityPathfindEvent
