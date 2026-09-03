@@ -289,7 +289,6 @@ public final class AdaptivePerformanceController {
             return;
         }
 
-        // Do not flood logs when a plugin leaks threads.
         if (now - lastThreadWarningNanos < 60_000_000_000L) {
             return;
         }
@@ -349,6 +348,30 @@ public final class AdaptivePerformanceController {
             configuration.chunkTickBackoff.busyInterval,
             configuration.chunkTickBackoff.highInterval,
             configuration.chunkTickBackoff.emergencyInterval
+        ));
+    }
+
+    public static boolean shouldSkipMobAi(final long gameTime, final long entitySalt) {
+        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
+        if (!configuration.enabled || !configuration.mobAiBackoff.enabled) {
+            return false;
+        }
+        return shouldSkipByInterval(gameTime, entitySalt, intervalFor(
+            configuration.mobAiBackoff.busyInterval,
+            configuration.mobAiBackoff.highInterval,
+            configuration.mobAiBackoff.emergencyInterval
+        ));
+    }
+
+    public static boolean shouldSkipPathfinding(final long gameTime, final long entitySalt) {
+        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
+        if (!configuration.enabled || !configuration.pathfindingBackoff.enabled) {
+            return false;
+        }
+        return shouldSkipByInterval(gameTime, entitySalt, intervalFor(
+            configuration.pathfindingBackoff.busyInterval,
+            configuration.pathfindingBackoff.highInterval,
+            configuration.pathfindingBackoff.emergencyInterval
         ));
     }
 
