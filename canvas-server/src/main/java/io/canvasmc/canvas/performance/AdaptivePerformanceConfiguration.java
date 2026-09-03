@@ -137,7 +137,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
         public double asyncQueueHighPercent = 80.0D;
         public double asyncQueueEmergencyPercent = 95.0D;
 
-        // Disabled by default because Linux free-memory accounting can include reclaimable page cache differently.
         public boolean useSystemMemory = false;
         public double systemMemoryBusyPercent = 85.0D;
         public double systemMemoryHighPercent = 92.0D;
@@ -151,7 +150,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highInterval").greaterThanOrEqualTo(1.0F);
             option("emergencyInterval").greaterThanOrEqualTo(1.0F);
         }
-
         public boolean enabled = true;
         public int busyInterval = 2;
         public int highInterval = 4;
@@ -165,7 +163,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highInterval").greaterThanOrEqualTo(1.0F);
             option("emergencyInterval").greaterThanOrEqualTo(1.0F);
         }
-
         public boolean enabled = true;
         public int busyInterval = 2;
         public int highInterval = 3;
@@ -179,7 +176,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highInterval").greaterThanOrEqualTo(1.0F);
             option("emergencyInterval").greaterThanOrEqualTo(1.0F);
         }
-
         public boolean enabled = true;
         public int busyInterval = 1;
         public int highInterval = 2;
@@ -193,8 +189,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highInterval").greaterThanOrEqualTo(1.0F);
             option("emergencyInterval").greaterThanOrEqualTo(1.0F);
         }
-
-        // Spreads weather/random chunk work only during serious pressure. Entity ticking is not skipped.
         public boolean enabled = true;
         public int busyInterval = 1;
         public int highInterval = 2;
@@ -208,7 +202,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highInterval").greaterThanOrEqualTo(1.0F);
             option("emergencyInterval").greaterThanOrEqualTo(1.0F);
         }
-
         public boolean enabled = true;
         public int busyInterval = 1;
         public int highInterval = 2;
@@ -222,7 +215,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highInterval").greaterThanOrEqualTo(1.0F);
             option("emergencyInterval").greaterThanOrEqualTo(1.0F);
         }
-
         public boolean enabled = true;
         public int busyInterval = 1;
         public int highInterval = 2;
@@ -241,17 +233,32 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("emergencyViewReduction").greaterThanOrEqualTo(0.0F);
             option("emergencySimulationReduction").greaterThanOrEqualTo(0.0F);
         }
-
         public boolean enabled = true;
         public int minimumViewDistance = 2;
         public int minimumSimulationDistance = 2;
-
         public int busyViewReduction = 0;
         public int busySimulationReduction = 1;
         public int highViewReduction = 1;
         public int highSimulationReduction = 1;
         public int emergencyViewReduction = 2;
         public int emergencySimulationReduction = 2;
+    }
+
+    public ChunkWorkerAdaptation chunkWorkers = new ChunkWorkerAdaptation();
+    public static final class ChunkWorkerAdaptation extends Part {
+        {
+            option("minimumWorkerThreads").greaterThanOrEqualTo(1.0F);
+            option("minimumIoThreads").greaterThanOrEqualTo(1.0F);
+            option("busyPercent").between(10.0F, 100.0F);
+            option("highPercent").between(10.0F, 100.0F);
+            option("emergencyPercent").between(10.0F, 100.0F);
+        }
+        public boolean enabled = true;
+        public int minimumWorkerThreads = 2;
+        public int minimumIoThreads = 1;
+        public int busyPercent = 100;
+        public int highPercent = 75;
+        public int emergencyPercent = 50;
     }
 
     public PluginBudget pluginBudget = new PluginBudget();
@@ -262,13 +269,11 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("slowListenerMicros").greaterThanOrEqualTo(100.0F);
             option("warningCooldownSeconds").greaterThanOrEqualTo(1.0F);
         }
-
         public boolean enabled = true;
         public long windowMillis = 5000L;
         public double budgetMillisPerWindow = 250.0D;
         public long slowListenerMicros = 5000L;
         public long warningCooldownSeconds = 30L;
-        // Opt-in only. Generic listener skipping can break protection/economy plugins.
         public boolean enforceInEmergency = false;
     }
 
@@ -282,7 +287,6 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("highMaxThreadsPercent").between(10.0F, 100.0F);
             option("emergencyMaxThreadsPercent").between(10.0F, 100.0F);
         }
-
         public ExecutorMode mode = ExecutorMode.BOUNDED_PLATFORM;
         public int coreThreads = 0;
         public int maxThreads = 0;
