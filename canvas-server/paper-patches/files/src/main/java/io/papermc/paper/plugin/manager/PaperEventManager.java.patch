@@ -1,6 +1,6 @@
 --- a/src/main/java/io/papermc/paper/plugin/manager/PaperEventManager.java
 +++ b/src/main/java/io/papermc/paper/plugin/manager/PaperEventManager.java
-@@ -36,14 +_,17 @@
+@@ -36,20 +_,28 @@
  
      // SimplePluginManager
      public void callEvent(@NotNull Event event) {
@@ -21,7 +21,6 @@
  
          for (RegisteredListener registration : listeners) {
              if (!registration.getPlugin().isEnabled()) {
-@@ -52,6 +_,11 @@
                  continue;
              }
  
@@ -33,11 +32,11 @@
              try {
                  registration.callEvent(event);
              } catch (AuthorNagException ex) {
-@@ -77,6 +_,7 @@
-                 if (!(event instanceof ServerExceptionEvent)) { // We don't want to cause an endless event loop
+@@ -72,6 +_,7 @@
                      this.callEvent(new ServerExceptionEvent(new ServerEventException(msg, ex, registration.getPlugin(), registration.getListener(), event)));
                  }
              }
 +            io.canvasmc.canvas.performance.PluginPerformanceTracker.end(registration.getPlugin(), event, canvas$eventStarted); // Canvas - plugin CPU accounting
          }
      }
+
