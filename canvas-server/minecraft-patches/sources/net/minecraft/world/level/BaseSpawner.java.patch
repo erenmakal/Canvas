@@ -84,11 +84,14 @@
  
      public void setEntityId(final EntityType<?> type, final @Nullable Level level, final RandomSource random, final BlockPos pos) {
          this.getOrCreateNextSpawnData(level, random, pos).getEntityToSpawn().putString("id", BuiltInRegistries.ENTITY_TYPE.getKey(type).toString());
-@@ -66,7 +_,7 @@
+@@ -66,7 +_,10 @@
      }
  
      public boolean isNearPlayer(final Level level, final BlockPos pos) {
 -        return level.hasNearbyAlivePlayerThatAffectsSpawning(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, this.requiredPlayerRange); // Paper - Affects Spawning API
++        if (io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipSpawner(level.getGameTime(), pos.asLong())) {
++            return false; // Canvas - adaptive spawner polling backoff under pressure
++        }
 +        return level.canvas$hasNearbyAlivePlayerThatAffectsSpawningForSpawner(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, this.requiredPlayerRange); // Paper - Affects Spawning API // Canvas - optimize spawners
      }
  
