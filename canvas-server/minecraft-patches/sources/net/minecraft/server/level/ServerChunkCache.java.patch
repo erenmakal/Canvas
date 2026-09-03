@@ -10,7 +10,7 @@
  
          // note: we can use the backing array here because:
          // 1. we do not care about new additions
-@@ -171,7 +_,13 @@
+@@ -171,7 +_,11 @@
  
          java.util.Objects.checkFromToIndex(0, size, raw.length);
          for (int i = 0; i < size; ++i) {
