@@ -91,13 +91,16 @@
      }
      // Paper end - Perf: Optimize Hoppers
  
-@@ -198,7 +_,8 @@
+@@ -198,7 +_,12 @@
  
          if (!entity.isOnCooldown() && state.getValue(HopperBlock.ENABLED)) {
              boolean changed = false;
 -            final int fullState = getFullState(entity); // Paper - Perf: Optimize Hoppers
 +            if (entity.fullState == -1) canvas$recomputeFullState(entity); // Canvas - optimize hoppers
 +            final int fullState = entity.fullState; // Paper - Perf: Optimize Hoppers // Canvas - optimize hoppers
++            if (io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipHopper(
++                level.getGameTime(), pos.asLong(), fullState == HOPPER_EMPTY
++            )) return; // Canvas - adaptive empty-hopper backoff under pressure
              if (fullState != HOPPER_EMPTY) { // Paper - Perf: Optimize Hoppers
                  changed = ejectItems(level, pos, entity);
              }
