@@ -15,12 +15,7 @@ import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Global pressure controller for large Folia servers.
- *
- * <p>The sampler is safe to call from every region tick. An atomic deadline ensures that only
- * one region performs the expensive metric collection for each configured sample interval.</p>
- */
+/** Global pressure controller for large Folia servers. */
 public final class AdaptivePerformanceController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("CanvasAdaptive");
@@ -37,6 +32,8 @@ public final class AdaptivePerformanceController {
     private static volatile long lastGcCollectionMillis = totalGcCollectionMillis();
     private static volatile long lastSampleNanos = System.nanoTime();
     private static volatile long lastThreadWarningNanos;
+    private static volatile int baseChunkWorkerThreads = -1;
+    private static volatile int baseChunkIoThreads = -1;
 
     private AdaptivePerformanceController() {
     }
@@ -52,7 +49,6 @@ public final class AdaptivePerformanceController {
         final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
         final long now = System.nanoTime();
         final long intervalNanos = Math.max(250L, configuration.sampleIntervalMillis) * 1_000_000L;
-
         final long next = NEXT_SAMPLE_NANOS.get();
         if (now < next || !NEXT_SAMPLE_NANOS.compareAndSet(next, now + intervalNanos)) {
             return;
@@ -74,7 +70,6 @@ public final class AdaptivePerformanceController {
         if (genericOsBean instanceof com.sun.management.OperatingSystemMXBean osBean) {
             final double rawCpu = osBean.getCpuLoad();
             cpuPercent = rawCpu < 0.0D ? 0.0D : rawCpu * 100.0D;
-
             final long totalMemory = osBean.getTotalMemorySize();
             final long freeMemory = osBean.getFreeMemorySize();
             systemMemoryPercent = totalMemory <= 0L
@@ -103,11 +98,9 @@ public final class AdaptivePerformanceController {
         final PressureState resolved = desired.ordinal() < current.ordinal() && !canRecoverFrom(current, configuration)
             ? current
             : desired;
-
         if (resolved != current) {
             transitionTo(resolved, configuration);
         }
-
         checkNativeThreadPressure(now, configuration);
     }
 
@@ -117,7 +110,6 @@ public final class AdaptivePerformanceController {
         if (server == null) {
             return targetTps;
         }
-
         final long tickInterval = TickRegionScheduler.getTimeBetweenTicks();
         final double[] worst = {targetTps};
         for (final ServerLevel level : server.getAllLevels()) {
@@ -133,7 +125,6 @@ public final class AdaptivePerformanceController {
 
     private static PressureState classify(final AdaptivePerformanceConfiguration configuration) {
         final AdaptivePerformanceConfiguration.PressureThresholds thresholds = configuration.pressure;
-
         if (heapPercent >= thresholds.heapEmergencyPercent
             || cpuPercent >= thresholds.cpuEmergencyPercent
             || gcPercent >= thresholds.gcEmergencyPercent
@@ -161,14 +152,10 @@ public final class AdaptivePerformanceController {
         return PressureState.NORMAL;
     }
 
-    private static boolean canRecoverFrom(
-        final PressureState current,
-        final AdaptivePerformanceConfiguration configuration
-    ) {
+    private static boolean canRecoverFrom(final PressureState current, final AdaptivePerformanceConfiguration configuration) {
         final AdaptivePerformanceConfiguration.PressureThresholds thresholds = configuration.pressure;
         final double hysteresis = configuration.recoveryHysteresisPercent;
         final double regionMargin = thresholds.regionRecoveryTpsMargin;
-
         return switch (current) {
             case NORMAL -> true;
             case BUSY -> heapPercent < thresholds.heapBusyPercent - hysteresis
@@ -192,68 +179,61 @@ public final class AdaptivePerformanceController {
         };
     }
 
-    private static void transitionTo(
-        final PressureState next,
-        final AdaptivePerformanceConfiguration configuration
-    ) {
+    private static void transitionTo(final PressureState next, final AdaptivePerformanceConfiguration configuration) {
         final PressureState previous = pressureState;
         pressureState = next;
-
         AdaptiveAsyncExecutor.onPressureStateChange(next);
+        adjustChunkWorkerPressure(next, configuration);
         scheduleDistanceAdjustment(next, configuration);
 
         if (configuration.logStateTransitions) {
             final String message = String.format(
                 "Pressure state %s -> %s (heap=%.1f%%, cpu=%.1f%%, gc=%.1f%%, system-ram=%.1f%%, worst-region=%.2f TPS, async-queue=%.1f%%, async-active=%d, async-pool=%d)",
-                previous,
-                next,
-                heapPercent,
-                cpuPercent,
-                gcPercent,
-                systemMemoryPercent,
-                worstRegionTps,
-                asyncQueuePercent,
-                AdaptiveAsyncExecutor.getActiveThreadCount(),
-                AdaptiveAsyncExecutor.getPoolSize()
+                previous, next, heapPercent, cpuPercent, gcPercent, systemMemoryPercent, worstRegionTps,
+                asyncQueuePercent, AdaptiveAsyncExecutor.getActiveThreadCount(), AdaptiveAsyncExecutor.getPoolSize()
             );
-            if (next.ordinal() >= PressureState.HIGH.ordinal()) {
-                LOGGER.warn(message);
-            } else {
-                LOGGER.info(message);
-            }
+            if (next.ordinal() >= PressureState.HIGH.ordinal()) LOGGER.warn(message); else LOGGER.info(message);
         }
     }
 
-    private static void scheduleDistanceAdjustment(
-        final PressureState state,
-        final AdaptivePerformanceConfiguration configuration
-    ) {
-        if (!configuration.adaptiveDistances.enabled || MinecraftServer.getServer() == null) {
+    private static void adjustChunkWorkerPressure(final PressureState state, final AdaptivePerformanceConfiguration configuration) {
+        if (!configuration.chunkWorkers.enabled) {
             return;
         }
+        if (!(ca.spottedleaf.moonrise.common.util.MoonriseCommon.WORKER_POOL instanceof io.canvasmc.canvas.world.chunk.BalancedChunkSystem workers)
+            || !(ca.spottedleaf.moonrise.common.util.MoonriseCommon.IO_POOL instanceof io.canvasmc.canvas.world.chunk.BalancedChunkSystem ioWorkers)) {
+            return;
+        }
+        if (baseChunkWorkerThreads < 1) baseChunkWorkerThreads = workers.getCoreThreads().length;
+        if (baseChunkIoThreads < 1) baseChunkIoThreads = ioWorkers.getCoreThreads().length;
 
+        final int percent = switch (state) {
+            case NORMAL -> 100;
+            case BUSY -> configuration.chunkWorkers.busyPercent;
+            case HIGH -> configuration.chunkWorkers.highPercent;
+            case EMERGENCY -> configuration.chunkWorkers.emergencyPercent;
+        };
+        final int workerTarget = Math.max(configuration.chunkWorkers.minimumWorkerThreads, (baseChunkWorkerThreads * percent) / 100);
+        final int ioTarget = Math.max(configuration.chunkWorkers.minimumIoThreads, (baseChunkIoThreads * percent) / 100);
+        workers.adjustThreadCount(Math.min(baseChunkWorkerThreads, Math.max(1, workerTarget)));
+        ioWorkers.adjustThreadCount(Math.min(baseChunkIoThreads, Math.max(1, ioTarget)));
+    }
+
+    private static void scheduleDistanceAdjustment(final PressureState state, final AdaptivePerformanceConfiguration configuration) {
+        if (!configuration.adaptiveDistances.enabled || MinecraftServer.getServer() == null) return;
         RegionizedServer.getInstance().addTask(() -> {
             final AdaptivePerformanceConfiguration.AdaptiveDistances distances = configuration.adaptiveDistances;
-
             for (final ServerLevel level : MinecraftServer.getServer().getAllLevels()) {
                 final ResourceKey<Level> key = level.dimension();
-
                 if (state == PressureState.NORMAL) {
                     final DistanceSnapshot snapshot = BASE_DISTANCES.remove(key);
-                    if (snapshot != null) {
-                        applyDistances(level, snapshot.viewDistance, snapshot.simulationDistance);
-                    }
+                    if (snapshot != null) applyDistances(level, snapshot.viewDistance, snapshot.simulationDistance);
                     continue;
                 }
-
-                final DistanceSnapshot base = BASE_DISTANCES.computeIfAbsent(
-                    key,
-                    ignored -> new DistanceSnapshot(
-                        level.serverLevelData.canvas$distanceConfig.viewDistanceOrDefault(),
-                        level.serverLevelData.canvas$distanceConfig.simulationDistanceOrDefault()
-                    )
-                );
-
+                final DistanceSnapshot base = BASE_DISTANCES.computeIfAbsent(key, ignored -> new DistanceSnapshot(
+                    level.serverLevelData.canvas$distanceConfig.viewDistanceOrDefault(),
+                    level.serverLevelData.canvas$distanceConfig.simulationDistanceOrDefault()
+                ));
                 final int viewReduction = switch (state) {
                     case NORMAL -> 0;
                     case BUSY -> distances.busyViewReduction;
@@ -266,10 +246,9 @@ public final class AdaptivePerformanceController {
                     case HIGH -> distances.highSimulationReduction;
                     case EMERGENCY -> distances.emergencySimulationReduction;
                 };
-
-                final int view = Math.max(distances.minimumViewDistance, base.viewDistance - viewReduction);
-                final int simulation = Math.max(distances.minimumSimulationDistance, base.simulationDistance - simulationReduction);
-                applyDistances(level, view, simulation);
+                applyDistances(level,
+                    Math.max(distances.minimumViewDistance, base.viewDistance - viewReduction),
+                    Math.max(distances.minimumSimulationDistance, base.simulationDistance - simulationReduction));
             }
         });
     }
@@ -279,100 +258,49 @@ public final class AdaptivePerformanceController {
         level.getChunkSource().chunkMap.getDistanceManager().updateSimulationDistance(simulationDistance);
     }
 
-    private static void checkNativeThreadPressure(
-        final long now,
-        final AdaptivePerformanceConfiguration configuration
-    ) {
+    private static void checkNativeThreadPressure(final long now, final AdaptivePerformanceConfiguration configuration) {
         final ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
         final int threadCount = threadBean.getThreadCount();
-        if (threadCount < configuration.nativeThreadWarningThreshold) {
-            return;
-        }
-
-        if (now - lastThreadWarningNanos < 60_000_000_000L) {
-            return;
-        }
+        if (threadCount < configuration.nativeThreadWarningThreshold || now - lastThreadWarningNanos < 60_000_000_000L) return;
         lastThreadWarningNanos = now;
-        LOGGER.warn(
-            "High native/platform thread count detected: {} live threads. This can lead to 'unable to create native thread'. " +
-                "Check plugins creating their own executors/threads.",
-            threadCount
-        );
+        LOGGER.warn("High native/platform thread count detected: {} live threads. Check plugins creating their own executors/threads.", threadCount);
     }
 
     public static boolean shouldSkipHopper(final long gameTime, final long positionSalt, final boolean idleOrBlocked) {
-        if (!idleOrBlocked) {
-            return false;
-        }
-        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
-        if (!configuration.enabled || !configuration.hopperBackoff.enabled) {
-            return false;
-        }
-        return shouldSkipByInterval(gameTime, positionSalt, intervalFor(
-            configuration.hopperBackoff.busyInterval,
-            configuration.hopperBackoff.highInterval,
-            configuration.hopperBackoff.emergencyInterval
-        ));
+        if (!idleOrBlocked) return false;
+        final AdaptivePerformanceConfiguration c = AdaptivePerformanceConfiguration.getInstance();
+        return c.enabled && c.hopperBackoff.enabled && shouldSkipByInterval(gameTime, positionSalt,
+            intervalFor(c.hopperBackoff.busyInterval, c.hopperBackoff.highInterval, c.hopperBackoff.emergencyInterval));
     }
 
     public static boolean shouldSkipSpawner(final long gameTime, final long positionSalt) {
-        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
-        if (!configuration.enabled || !configuration.spawnerBackoff.enabled) {
-            return false;
-        }
-        return shouldSkipByInterval(gameTime, positionSalt, intervalFor(
-            configuration.spawnerBackoff.busyInterval,
-            configuration.spawnerBackoff.highInterval,
-            configuration.spawnerBackoff.emergencyInterval
-        ));
+        final AdaptivePerformanceConfiguration c = AdaptivePerformanceConfiguration.getInstance();
+        return c.enabled && c.spawnerBackoff.enabled && shouldSkipByInterval(gameTime, positionSalt,
+            intervalFor(c.spawnerBackoff.busyInterval, c.spawnerBackoff.highInterval, c.spawnerBackoff.emergencyInterval));
     }
 
-    public static boolean shouldSkipNaturalSpawning(final long gameTime, final long chunkSalt) {
-        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
-        if (!configuration.enabled || !configuration.naturalSpawningBackoff.enabled) {
-            return false;
-        }
-        return shouldSkipByInterval(gameTime, chunkSalt, intervalFor(
-            configuration.naturalSpawningBackoff.busyInterval,
-            configuration.naturalSpawningBackoff.highInterval,
-            configuration.naturalSpawningBackoff.emergencyInterval
-        ));
+    public static boolean shouldSkipNaturalSpawning(final long gameTime, final long salt) {
+        final AdaptivePerformanceConfiguration c = AdaptivePerformanceConfiguration.getInstance();
+        return c.enabled && c.naturalSpawningBackoff.enabled && shouldSkipByInterval(gameTime, salt,
+            intervalFor(c.naturalSpawningBackoff.busyInterval, c.naturalSpawningBackoff.highInterval, c.naturalSpawningBackoff.emergencyInterval));
     }
 
-    public static boolean shouldSkipChunkTick(final long gameTime, final long chunkSalt) {
-        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
-        if (!configuration.enabled || !configuration.chunkTickBackoff.enabled) {
-            return false;
-        }
-        return shouldSkipByInterval(gameTime, chunkSalt, intervalFor(
-            configuration.chunkTickBackoff.busyInterval,
-            configuration.chunkTickBackoff.highInterval,
-            configuration.chunkTickBackoff.emergencyInterval
-        ));
+    public static boolean shouldSkipChunkTick(final long gameTime, final long salt) {
+        final AdaptivePerformanceConfiguration c = AdaptivePerformanceConfiguration.getInstance();
+        return c.enabled && c.chunkTickBackoff.enabled && shouldSkipByInterval(gameTime, salt,
+            intervalFor(c.chunkTickBackoff.busyInterval, c.chunkTickBackoff.highInterval, c.chunkTickBackoff.emergencyInterval));
     }
 
-    public static boolean shouldSkipMobAi(final long gameTime, final long entitySalt) {
-        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
-        if (!configuration.enabled || !configuration.mobAiBackoff.enabled) {
-            return false;
-        }
-        return shouldSkipByInterval(gameTime, entitySalt, intervalFor(
-            configuration.mobAiBackoff.busyInterval,
-            configuration.mobAiBackoff.highInterval,
-            configuration.mobAiBackoff.emergencyInterval
-        ));
+    public static boolean shouldSkipMobAi(final long gameTime, final long salt) {
+        final AdaptivePerformanceConfiguration c = AdaptivePerformanceConfiguration.getInstance();
+        return c.enabled && c.mobAiBackoff.enabled && shouldSkipByInterval(gameTime, salt,
+            intervalFor(c.mobAiBackoff.busyInterval, c.mobAiBackoff.highInterval, c.mobAiBackoff.emergencyInterval));
     }
 
-    public static boolean shouldSkipPathfinding(final long gameTime, final long entitySalt) {
-        final AdaptivePerformanceConfiguration configuration = AdaptivePerformanceConfiguration.getInstance();
-        if (!configuration.enabled || !configuration.pathfindingBackoff.enabled) {
-            return false;
-        }
-        return shouldSkipByInterval(gameTime, entitySalt, intervalFor(
-            configuration.pathfindingBackoff.busyInterval,
-            configuration.pathfindingBackoff.highInterval,
-            configuration.pathfindingBackoff.emergencyInterval
-        ));
+    public static boolean shouldSkipPathfinding(final long gameTime, final long salt) {
+        final AdaptivePerformanceConfiguration c = AdaptivePerformanceConfiguration.getInstance();
+        return c.enabled && c.pathfindingBackoff.enabled && shouldSkipByInterval(gameTime, salt,
+            intervalFor(c.pathfindingBackoff.busyInterval, c.pathfindingBackoff.highInterval, c.pathfindingBackoff.emergencyInterval));
     }
 
     private static int intervalFor(final int busy, final int high, final int emergency) {
@@ -385,50 +313,25 @@ public final class AdaptivePerformanceController {
     }
 
     private static boolean shouldSkipByInterval(final long gameTime, final long salt, final int interval) {
-        if (interval <= 1) {
-            return false;
-        }
-        return Math.floorMod(gameTime + salt, interval) != 0;
+        return interval > 1 && Math.floorMod(gameTime + salt, interval) != 0;
     }
 
     private static long totalGcCollectionMillis() {
         long total = 0L;
         for (final GarbageCollectorMXBean bean : ManagementFactory.getGarbageCollectorMXBeans()) {
             final long time = bean.getCollectionTime();
-            if (time > 0L) {
-                total += time;
-            }
+            if (time > 0L) total += time;
         }
         return total;
     }
 
-    public static PressureState getPressureState() {
-        return pressureState;
-    }
-
-    public static double getHeapPercent() {
-        return heapPercent;
-    }
-
-    public static double getCpuPercent() {
-        return cpuPercent;
-    }
-
-    public static double getGcPercent() {
-        return gcPercent;
-    }
-
-    public static double getSystemMemoryPercent() {
-        return systemMemoryPercent;
-    }
-
-    public static double getAsyncQueuePercent() {
-        return asyncQueuePercent;
-    }
-
-    public static double getWorstRegionTps() {
-        return worstRegionTps;
-    }
+    public static PressureState getPressureState() { return pressureState; }
+    public static double getHeapPercent() { return heapPercent; }
+    public static double getCpuPercent() { return cpuPercent; }
+    public static double getGcPercent() { return gcPercent; }
+    public static double getSystemMemoryPercent() { return systemMemoryPercent; }
+    public static double getAsyncQueuePercent() { return asyncQueuePercent; }
+    public static double getWorstRegionTps() { return worstRegionTps; }
 
     private record DistanceSnapshot(int viewDistance, int simulationDistance) {
     }
