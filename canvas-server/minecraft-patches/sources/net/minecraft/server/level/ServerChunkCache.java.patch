@@ -39,7 +39,7 @@
              }
              // Paper end - PlayerNaturallySpawnCreaturesEvent
              boolean spawnPersistent = this.level.ticksPerSpawnCategory.getLong(org.bukkit.entity.SpawnCategory.ANIMAL) != 0L && this.level.getRedstoneGameTime() % this.level.ticksPerSpawnCategory.getLong(org.bukkit.entity.SpawnCategory.ANIMAL) == 0L; // CraftBukkit // Folia - region threading
-@@ -564,16 +_,21 @@
+@@ -564,16 +_,24 @@
          List<LevelChunk> spawningChunks = regionizedWorldData.temporaryChunkTickList; // Folia - region threading
  
          try {
@@ -57,7 +57,12 @@
              // Paper end - chunk tick iteration optimisation
  
              for (LevelChunk chunk : spawningChunks) {
-                 this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
+-                this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
++                if (!io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipNaturalSpawning(
++                    this.level.getGameTime(), chunk.getPos().toLong()
++                )) {
++                    this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
++                }
              }
          } finally {
 +            regionizedWorldData.getCanvasWorldData().natureSpawnChunkMap.clear(); // Canvas - optimize collect spawning chunks
