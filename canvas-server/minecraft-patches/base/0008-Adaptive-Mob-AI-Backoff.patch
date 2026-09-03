@@ -10,7 +10,7 @@ controller reports elevated pressure. Normal-state behaviour is unchanged.
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -2875,7 +2875,11 @@ public abstract class LivingEntity extends Entity implements Attackable, WaypointTransmitter, EquipmentUser, Leashable {
+@@ -2875,8 +2875,11 @@ public abstract class LivingEntity extends Entity implements Attackable, WaypointTransmitter, EquipmentUser, Leashable {
              this.jumping = false;
              this.xxa = 0.0F;
              this.zza = 0.0F;
