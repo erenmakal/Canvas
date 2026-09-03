@@ -201,6 +201,34 @@ public final class AdaptivePerformanceConfiguration extends Part {
         public int emergencyInterval = 3;
     }
 
+    public MobAiBackoff mobAiBackoff = new MobAiBackoff();
+    public static final class MobAiBackoff extends Part {
+        {
+            option("busyInterval").greaterThanOrEqualTo(1.0F);
+            option("highInterval").greaterThanOrEqualTo(1.0F);
+            option("emergencyInterval").greaterThanOrEqualTo(1.0F);
+        }
+
+        public boolean enabled = true;
+        public int busyInterval = 1;
+        public int highInterval = 2;
+        public int emergencyInterval = 3;
+    }
+
+    public PathfindingBackoff pathfindingBackoff = new PathfindingBackoff();
+    public static final class PathfindingBackoff extends Part {
+        {
+            option("busyInterval").greaterThanOrEqualTo(1.0F);
+            option("highInterval").greaterThanOrEqualTo(1.0F);
+            option("emergencyInterval").greaterThanOrEqualTo(1.0F);
+        }
+
+        public boolean enabled = true;
+        public int busyInterval = 1;
+        public int highInterval = 2;
+        public int emergencyInterval = 4;
+    }
+
     public AdaptiveDistances adaptiveDistances = new AdaptiveDistances();
     public static final class AdaptiveDistances extends Part {
         {
