@@ -1,6 +1,6 @@
 --- a/net/minecraft/world/entity/ai/navigation/PathNavigation.java
 +++ b/net/minecraft/world/entity/ai/navigation/PathNavigation.java
-@@ -150,6 +_,10 @@
+@@ -150,6 +_,11 @@
          if (this.path != null && !this.path.isDone() && targets.contains(this.targetPos)) {
              return this.path;
          }
