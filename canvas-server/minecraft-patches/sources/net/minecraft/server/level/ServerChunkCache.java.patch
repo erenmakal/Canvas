@@ -10,12 +10,16 @@
  
          // note: we can use the backing array here because:
          // 1. we do not care about new additions
-@@ -171,7 +_,7 @@
+@@ -171,7 +_,11 @@
  
          java.util.Objects.checkFromToIndex(0, size, raw.length);
          for (int i = 0; i < size; ++i) {
 -            world.tickChunk(raw[i], randomTickSpeed);
-+            world.tickChunk(raw[i], randomTickSpeed, worldData); // Canvas - optimize random tick
++            final net.minecraft.world.level.ChunkPos canvas$chunkPos = raw[i].getPos();
++            final long canvas$chunkSalt = (((long)canvas$chunkPos.x()) << 32) ^ (canvas$chunkPos.z() & 0xffffffffL);
++            if (!io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipChunkTick(world.getGameTime(), canvas$chunkSalt)) {
++                world.tickChunk(raw[i], randomTickSpeed, worldData); // Canvas - optimize random tick
++            }
  
              // call mid-tick tasks for chunk system
              if ((i & 7) == 0) {
@@ -39,7 +43,7 @@
              }
              // Paper end - PlayerNaturallySpawnCreaturesEvent
              boolean spawnPersistent = this.level.ticksPerSpawnCategory.getLong(org.bukkit.entity.SpawnCategory.ANIMAL) != 0L && this.level.getRedstoneGameTime() % this.level.ticksPerSpawnCategory.getLong(org.bukkit.entity.SpawnCategory.ANIMAL) == 0L; // CraftBukkit // Folia - region threading
-@@ -564,16 +_,21 @@
+@@ -564,16 +_,25 @@
          List<LevelChunk> spawningChunks = regionizedWorldData.temporaryChunkTickList; // Folia - region threading
  
          try {
@@ -57,7 +61,12 @@
              // Paper end - chunk tick iteration optimisation
  
              for (LevelChunk chunk : spawningChunks) {
-                 this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
+-                this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
++                if (!io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipNaturalSpawning(
++                    this.level.getGameTime(), (((long)chunk.getPos().x()) << 32) ^ (chunk.getPos().z() & 0xffffffffL)
++                )) {
++                    this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
++                }
              }
          } finally {
 +            regionizedWorldData.getCanvasWorldData().natureSpawnChunkMap.clear(); // Canvas - optimize collect spawning chunks

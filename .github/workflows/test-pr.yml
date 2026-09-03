@@ -48,3 +48,14 @@ jobs:
 
       - name: Run tests
         run: ./gradlew test
+
+      - name: Build paperclip JAR
+        run: ./gradlew createPaperclipJar
+
+      - name: Upload server JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-adaptive-26.2
+          path: canvas-server/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 7

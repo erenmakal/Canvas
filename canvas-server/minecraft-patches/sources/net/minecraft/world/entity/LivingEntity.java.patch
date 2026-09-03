@@ -192,6 +192,18 @@
              slowDown += (0.54600006F - slowDown) * waterWalker;
              speed += (this.getSpeed() - speed) * waterWalker;
          }
+@@ -3769,7 +_,10 @@
+             this.xxa = 0.0F;
+             this.zza = 0.0F;
+         } else if (this.isEffectiveAi() && !this.level().isClientSide()) {
+-            this.serverAiStep();
++            if (!(this instanceof net.minecraft.world.entity.Mob)
++                || !io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipMobAi(this.level().getGameTime(), this.getId())) {
++                this.serverAiStep();
++            }
+         }
+ 
+         if (this.jumping && this.isAffectedByFluids()) {
 @@ -3841,7 +_,7 @@
              this.checkAutoSpinAttack(beforeTravelBox, this.getBoundingBox());
          }

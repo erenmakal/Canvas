@@ -1,0 +1,14 @@
+--- a/net/minecraft/world/entity/ai/navigation/PathNavigation.java
++++ b/net/minecraft/world/entity/ai/navigation/PathNavigation.java
+@@ -193,6 +_,11 @@
+             }
+         }
+         // Paper end - EntityPathfindEvent
++        if (io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipPathfinding(
++            this.level.getGameTime(), this.mob.getId()
++        )) {
++            return this.path; // Canvas - spread expensive path recalculation under pressure
++        }
+         BlockPos fromPos = above ? this.mob.blockPosition().above() : this.mob.blockPosition();
+         int radius = (int)(maxPathLength + radiusOffset);
+         PathNavigationRegion region = new PathNavigationRegion(this.level, fromPos.offset(-radius, -radius, -radius), fromPos.offset(radius, radius, radius));
