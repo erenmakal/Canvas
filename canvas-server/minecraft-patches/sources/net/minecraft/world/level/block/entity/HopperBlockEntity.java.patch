@@ -91,7 +91,7 @@
      }
      // Paper end - Perf: Optimize Hoppers
  
-@@ -198,7 +_,12 @@
+@@ -198,7 +_,11 @@
  
          if (!entity.isOnCooldown() && state.getValue(HopperBlock.ENABLED)) {
              boolean changed = false;
