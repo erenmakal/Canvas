@@ -65,13 +65,14 @@ public final class AdaptivePerformanceConfiguration extends Part {
                 .blank()
                 .wordWrap(
                     "This file controls pressure-aware CPU/RAM protection added by this fork.",
-                    "The controller reacts to heap, CPU and GC pressure and can temporarily reduce expensive work.",
-                    "All changes recover automatically when the server returns to a healthy state."
+                    "The controller reacts to heap, CPU, GC, region TPS and async queue pressure.",
+                    "All temporary throttles recover automatically when the server becomes healthy."
                 ).endLine()
                 .blank()
                 .wordWrap(
-                    "These features are designed for large Folia survival servers. Hopper/spawner backoff and",
-                    "adaptive view/simulation distances can slightly alter timing while the server is under pressure."
+                    "Gameplay-affecting throttles only activate under configured pressure states.",
+                    "Plugin budget enforcement is intentionally disabled by default because skipping plugin listeners",
+                    "can break gameplay or protection logic; telemetry and warnings remain available."
                 )
                 .compile(60)
         );
@@ -101,6 +102,16 @@ public final class AdaptivePerformanceConfiguration extends Part {
             option("gcBusyPercent").between(0.0F, 100.0F);
             option("gcHighPercent").between(0.0F, 100.0F);
             option("gcEmergencyPercent").between(0.0F, 100.0F);
+            option("regionBusyTps").between(0.1F, 1000.0F);
+            option("regionHighTps").between(0.1F, 1000.0F);
+            option("regionEmergencyTps").between(0.1F, 1000.0F);
+            option("regionRecoveryTpsMargin").between(0.0F, 20.0F);
+            option("asyncQueueBusyPercent").between(1.0F, 100.0F);
+            option("asyncQueueHighPercent").between(1.0F, 100.0F);
+            option("asyncQueueEmergencyPercent").between(1.0F, 100.0F);
+            option("systemMemoryBusyPercent").between(1.0F, 100.0F);
+            option("systemMemoryHighPercent").between(1.0F, 100.0F);
+            option("systemMemoryEmergencyPercent").between(1.0F, 100.0F);
         }
 
         public double heapBusyPercent = 72.0D;
@@ -114,6 +125,23 @@ public final class AdaptivePerformanceConfiguration extends Part {
         public double gcBusyPercent = 8.0D;
         public double gcHighPercent = 15.0D;
         public double gcEmergencyPercent = 30.0D;
+
+        public boolean useRegionTps = true;
+        public double regionBusyTps = 18.0D;
+        public double regionHighTps = 15.0D;
+        public double regionEmergencyTps = 10.0D;
+        public double regionRecoveryTpsMargin = 1.0D;
+
+        public boolean useAsyncQueuePressure = true;
+        public double asyncQueueBusyPercent = 60.0D;
+        public double asyncQueueHighPercent = 80.0D;
+        public double asyncQueueEmergencyPercent = 95.0D;
+
+        // Disabled by default because Linux free-memory accounting can include reclaimable page cache differently.
+        public boolean useSystemMemory = false;
+        public double systemMemoryBusyPercent = 85.0D;
+        public double systemMemoryHighPercent = 92.0D;
+        public double systemMemoryEmergencyPercent = 97.0D;
     }
 
     public HopperBackoff hopperBackoff = new HopperBackoff();
@@ -158,6 +186,21 @@ public final class AdaptivePerformanceConfiguration extends Part {
         public int emergencyInterval = 4;
     }
 
+    public ChunkTickBackoff chunkTickBackoff = new ChunkTickBackoff();
+    public static final class ChunkTickBackoff extends Part {
+        {
+            option("busyInterval").greaterThanOrEqualTo(1.0F);
+            option("highInterval").greaterThanOrEqualTo(1.0F);
+            option("emergencyInterval").greaterThanOrEqualTo(1.0F);
+        }
+
+        // Spreads weather/random chunk work only during serious pressure. Entity ticking is not skipped.
+        public boolean enabled = true;
+        public int busyInterval = 1;
+        public int highInterval = 2;
+        public int emergencyInterval = 3;
+    }
+
     public AdaptiveDistances adaptiveDistances = new AdaptiveDistances();
     public static final class AdaptiveDistances extends Part {
         {
@@ -181,6 +224,24 @@ public final class AdaptivePerformanceConfiguration extends Part {
         public int highSimulationReduction = 1;
         public int emergencyViewReduction = 2;
         public int emergencySimulationReduction = 2;
+    }
+
+    public PluginBudget pluginBudget = new PluginBudget();
+    public static final class PluginBudget extends Part {
+        {
+            option("windowMillis").greaterThanOrEqualTo(250.0F);
+            option("budgetMillisPerWindow").greaterThanOrEqualTo(1.0F);
+            option("slowListenerMicros").greaterThanOrEqualTo(100.0F);
+            option("warningCooldownSeconds").greaterThanOrEqualTo(1.0F);
+        }
+
+        public boolean enabled = true;
+        public long windowMillis = 5000L;
+        public double budgetMillisPerWindow = 250.0D;
+        public long slowListenerMicros = 5000L;
+        public long warningCooldownSeconds = 30L;
+        // Opt-in only. Generic listener skipping can break protection/economy plugins.
+        public boolean enforceInEmergency = false;
     }
 
     public AsyncScheduler asyncScheduler = new AsyncScheduler();
