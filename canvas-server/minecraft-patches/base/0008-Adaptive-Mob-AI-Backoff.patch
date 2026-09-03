@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Eren Makal <69559506+erenmakal@users.noreply.github.com>
+Date: Fri, 4 Sep 2026 01:55:00 +0300
+Subject: [PATCH] Add adaptive mob AI backoff
+
+Spread expensive mob AI work across ticks only while the adaptive
+controller reports elevated pressure. Normal-state behaviour is unchanged.
+
+
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -2875,7 +2875,11 @@ public abstract class LivingEntity extends Entity implements Attackable, WaypointTransmitter, EquipmentUser, Leashable {
+             this.jumping = false;
+             this.xxa = 0.0F;
+             this.zza = 0.0F;
+         } else if (this.isEffectiveAi() && !this.level().isClientSide()) {
+-            this.serverAiStep();
++            if (!(this instanceof net.minecraft.world.entity.Mob)
++                || !io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipMobAi(this.level().getGameTime(), this.getId())) {
++                this.serverAiStep();
++            }
+         }
+ 
+         if (this.jumping && this.isAffectedByFluids()) {
