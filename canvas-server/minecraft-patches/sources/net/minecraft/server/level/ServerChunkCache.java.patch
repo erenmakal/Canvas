@@ -59,7 +59,7 @@
              for (LevelChunk chunk : spawningChunks) {
 -                this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
 +                if (!io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipNaturalSpawning(
-+                    this.level.getGameTime(), chunk.getPos().toLong()
++                    this.level.getGameTime(), (((long)chunk.getPos().x) << 32) ^ (chunk.getPos().z & 0xffffffffL)
 +                )) {
 +                    this.tickSpawningChunk(chunk, timeDiff, spawningCategories, spawnCookie);
 +                }
