@@ -10,12 +10,16 @@
  
          // note: we can use the backing array here because:
          // 1. we do not care about new additions
-@@ -171,7 +_,7 @@
+@@ -171,7 +_,13 @@
  
          java.util.Objects.checkFromToIndex(0, size, raw.length);
          for (int i = 0; i < size; ++i) {
 -            world.tickChunk(raw[i], randomTickSpeed);
-+            world.tickChunk(raw[i], randomTickSpeed, worldData); // Canvas - optimize random tick
++            final net.minecraft.world.level.ChunkPos canvas$chunkPos = raw[i].getPos();
++            final long canvas$chunkSalt = (((long)canvas$chunkPos.x()) << 32) ^ (canvas$chunkPos.z() & 0xffffffffL);
++            if (!io.canvasmc.canvas.performance.AdaptivePerformanceController.shouldSkipChunkTick(world.getGameTime(), canvas$chunkSalt)) {
++                world.tickChunk(raw[i], randomTickSpeed, worldData); // Canvas - optimize random tick
++            }
  
              // call mid-tick tasks for chunk system
              if ((i & 7) == 0) {
