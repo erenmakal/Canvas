@@ -26,7 +26,7 @@
                  if (this instanceof ServerPlayer) {
                      level.sendParticlesSource((ServerPlayer)this, new BlockParticleOption(ParticleTypes.BLOCK, onState), false, false, x, y, z, particles, 0.0, 0.0, 0.0, 0.15F);
                  } else {
-                 level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK, onState), x, y, z, particles, 0.0, 0.0, 0.0, 0.0, 0.15F);
+                 level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK, onState), x, y, z, particles, 0.0, 0.0, 0.0, 0.15F);
                  }
 +                } // Canvas - particles config
                  // CraftBukkit end
