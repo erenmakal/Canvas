@@ -51,6 +51,14 @@
                  BlockState aboveBlock = state.setValue(AGE, 0);
                  level.setBlock(pos, aboveBlock, Block.UPDATE_NONE);
                  level.neighborChanged(aboveBlock, above, this, null, false);
+@@ -82,7 +_,7 @@
+ 
+         if (age < 15) {
+-            level.setBlock(pos, state.setValue(AGE, age + 1), Block.UPDATE_NONE);
++            org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockGrowEvent(level, pos, state.setValue(AGE, age + 1), Block.UPDATE_NONE); // Canvas - Paper#13480: make cactus age changes cancellable
+         }
+     }
+ 
 @@ -111,6 +_,11 @@
  
      @Override
